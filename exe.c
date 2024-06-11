@@ -850,8 +850,10 @@ ast value_type(ast node) {
       } else {
         fatal_error("value_type: -> operator on non-struct pointer type");
       }
+    } else if (op == CAST) {
+      return get_child(node, 0);
     } else {
-      fatal_error("value_type: unknown expression");
+      fatal_error("value_type: unknown expression with 2 children");
     }
 
   } else if (nb_children == 3) {
@@ -1388,6 +1390,8 @@ void codegen_rvalue(ast node) {
       } else {
         fatal_error("codegen_rvalue: -> operator on non-struct pointer type");
       }
+    } else if (op == CAST) {
+      codegen_rvalue(get_child(node, 1));
     } else {
       fatal_error("codegen_rvalue: unknown rvalue with 2 children");
     }
