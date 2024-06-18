@@ -17,6 +17,8 @@
 // support fopen and fgetc, meaning that #include directives can't be used.
 #define SUPPORT_INCLUDE_not
 
+#define DEBUG_PARSER
+
 #define AVOID_AMPAMP_BARBAR_not
 
 #define OPTIMIZE_CONSTANT_PARAM_not
@@ -46,6 +48,13 @@ int strcmp(char *str1, char *str2) {
   }
   return str1[i] - str2[i];
 }
+
+#endif
+
+#ifdef DEBUG_PARSER
+
+int line_number = 1;
+int column_number = 1;
 
 #endif
 
@@ -161,11 +170,17 @@ void putintneg(int n) {
 
 void fatal_error(char *msg) {
   putstr(msg); putchar('\n');
+#ifdef DEBUG_PARSER
+  putstr("on line "); putint(line_number); putstr(", column "); putint(column_number); putchar('\n');
+#endif
   exit(1);
 }
 
 void syntax_error(char *msg) {
   putstr("syntax error: "); putstr(msg); putchar('\n');
+#ifdef DEBUG_PARSER
+  putstr("on line "); putint(line_number); putstr(", column "); putint(column_number); putchar('\n');
+#endif
   exit(1);
 }
 
@@ -414,8 +429,24 @@ void get_ch() {
       get_ch();
     }
   }
+#ifdef DEBUG_PARSER
+  else if (ch == '\n') {
+    line_number += 1;
+    column_number = 1;
+  } else {
+    column_number += 1;
+  }
+#endif
 #else
   ch = getchar();
+#ifdef DEBUG_PARSER
+  if (ch == '\n') {
+    line_number += 1;
+    column_number = 1;
+  } else {
+    column_number += 1;
+  }
+#endif
 #endif
 }
 
@@ -1671,9 +1702,11 @@ ast parse_struct() {
   expect_tok(STRUCT_KW);
 
   if (tok == IDENTIFIER) {
+    printf("Parsing struct %s\n", string_pool + heap[val + 1]);
     name = new_ast0(IDENTIFIER, val);
     get_tok();
   } else if (tok == TYPE) {
+    printf("type lookup %s\n", string_pool + heap[val + 1]);
     result = heap[val + 3]; /* For TYPE tokens, the tag is the type */
     if (get_op(result) != STRUCT_KW) syntax_error("struct type expected");
     get_tok();
@@ -1687,7 +1720,11 @@ ast parse_struct() {
     get_tok();
 
     while (tok != '}') {
-      if (!is_type_starter(tok)) syntax_error("type expected in struct declaration");
+      if (!is_type_starter(tok)) {
+        printf("tok=%d\n", tok);
+        printf("%s\n", string_pool + heap[val + 1]);
+        syntax_error("type expected in struct declaration");
+      }
 
       type = parse_type();
       stars = parse_stars();
@@ -1727,6 +1764,8 @@ ast parse_struct() {
     expect_tok('}');
 
   }
+
+  printf("Returning struct with name %s\n", string_pool + heap[get_val(name) + 1]);
 
   return new_ast3(STRUCT_KW, 0, name, result); // 0 is number of stars
 }
@@ -1776,9 +1815,17 @@ ast parse_declaration() {
 }
 
 int parse_declaration_list() {
-  ast decl = parse_declaration();
+  ast decl;
   ast result = 0;
   ast tail;
+
+
+  if (tok == VOID_KW) { // forward declarations with no arguments
+    get_tok();
+    return 0;
+  }
+
+  decl = parse_declaration();
   if (decl != 0) {
     result = new_ast2(',', decl, 0);
     tail = result;
@@ -1924,6 +1971,8 @@ ast parse_definition(int local) {
     type = parse_type();
     if (tok != IDENTIFIER) { syntax_error("identifier expected"); }
 
+    printf("typedef %d %s\n", val, string_pool + heap[val + 1]);
+
     heap[val + 2] = TYPE;
     heap[val + 3] = type;
     result = new_ast2(TYPEDEF_KW, val, type);
@@ -1931,6 +1980,7 @@ ast parse_definition(int local) {
     expect_tok(';');
     return result;
   } else {
+    printf("tok=%d\n", tok);
     return result;
   }
 }
@@ -2137,11 +2187,10 @@ ast parse_cast_expression() {
     if (is_type_starter(tok)) {
       type = parse_type();
       stars = parse_stars();
-      set_val(type, stars);
-      // TODO: Import clone_ast from other branch
-      // if (stars != 0) {
-      //   type = clone_ast(type);
-      // }
+      if (stars != 0) {
+        type = clone_ast(type);
+        set_val(type, stars);
+      }
 
       expect_tok(')');
       result = new_ast2(CAST, type, parse_cast_expression());
